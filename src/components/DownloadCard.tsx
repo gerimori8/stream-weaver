@@ -1,18 +1,19 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Download, Link2, Loader2, Check, AlertCircle, Sparkles } from "lucide-react";
+import { Download, Link2, Loader2, Check, AlertCircle, Sparkles, ExternalLink } from "lucide-react";
 import { FormatSelector } from "./FormatSelector";
+import { VideoPreview } from "./VideoPreview";
 import { toast } from "@/hooks/use-toast";
+import { downloadVideo, triggerDownload, extractVideoId, type DownloadResponse } from "@/lib/api";
 
 export const DownloadCard = () => {
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState<"mp3" | "mp4">("mp3");
   const [isLoading, setIsLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [videoInfo, setVideoInfo] = useState<DownloadResponse | null>(null);
 
   const isValidYouTubeUrl = (url: string) => {
-    const regex = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/)|youtu\.be\/)[\w-]+/;
-    return regex.test(url);
+    return extractVideoId(url) !== null;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -37,21 +38,39 @@ export const DownloadCard = () => {
     }
 
     setIsLoading(true);
+    setVideoInfo(null);
     
-    // Simulate API call - will be replaced with actual RapidAPI integration
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const result = await downloadVideo(url, format);
     
     setIsLoading(false);
-    setIsSuccess(true);
+
+    if (!result.success) {
+      toast({
+        title: "Error",
+        description: result.error || "No se pudo procesar el video",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setVideoInfo(result);
     
     toast({
-      title: "¡Descarga lista!",
-      description: `Tu archivo ${format.toUpperCase()} está preparado`,
+      title: "¡Listo para descargar!",
+      description: `${result.title?.slice(0, 40)}...`,
     });
+  };
 
-    setTimeout(() => {
-      setIsSuccess(false);
-    }, 3000);
+  const handleDownload = () => {
+    if (videoInfo?.downloadUrl && videoInfo.title) {
+      const filename = `${videoInfo.title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
+      triggerDownload(videoInfo.downloadUrl, filename);
+      
+      toast({
+        title: "Descarga iniciada",
+        description: "El archivo se está descargando...",
+      });
+    }
   };
 
   return (
@@ -92,7 +111,10 @@ export const DownloadCard = () => {
               <input
                 type="text"
                 value={url}
-                onChange={(e) => setUrl(e.target.value)}
+                onChange={(e) => {
+                  setUrl(e.target.value);
+                  setVideoInfo(null);
+                }}
                 placeholder="https://youtube.com/watch?v=..."
                 className="input-elegant pr-12"
                 disabled={isLoading}
@@ -132,10 +154,16 @@ export const DownloadCard = () => {
             <label className="text-sm font-medium text-muted-foreground">
               Formato de salida
             </label>
-            <FormatSelector format={format} onChange={setFormat} />
+            <FormatSelector 
+              format={format} 
+              onChange={(f) => {
+                setFormat(f);
+                setVideoInfo(null);
+              }} 
+            />
           </motion.div>
 
-          {/* Download Button */}
+          {/* Process Button */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -160,17 +188,6 @@ export const DownloadCard = () => {
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>Procesando...</span>
                   </motion.div>
-                ) : isSuccess ? (
-                  <motion.div
-                    key="success"
-                    initial={{ opacity: 0, scale: 0.8 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.8 }}
-                    className="flex items-center gap-3"
-                  >
-                    <Check className="w-5 h-5" />
-                    <span>¡Completado!</span>
-                  </motion.div>
                 ) : (
                   <motion.div
                     key="default"
@@ -180,13 +197,39 @@ export const DownloadCard = () => {
                     className="flex items-center gap-3"
                   >
                     <Download className="w-5 h-5" />
-                    <span>Descargar {format.toUpperCase()}</span>
+                    <span>Obtener {format.toUpperCase()}</span>
                   </motion.div>
                 )}
               </AnimatePresence>
             </motion.button>
           </motion.div>
         </form>
+
+        {/* Video Preview */}
+        <AnimatePresence>
+          {videoInfo && videoInfo.success && (
+            <>
+              <VideoPreview
+                title={videoInfo.title || 'Video'}
+                thumbnail={videoInfo.thumbnail || ''}
+                duration={videoInfo.duration || 0}
+                channel={videoInfo.channel || 'Unknown'}
+                quality={videoInfo.quality || ''}
+                format={videoInfo.format || format}
+              />
+              
+              <motion.button
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={handleDownload}
+                className="mt-4 w-full btn-secondary flex items-center justify-center gap-2"
+              >
+                <ExternalLink className="w-4 h-4" />
+                <span>Descargar Ahora</span>
+              </motion.button>
+            </>
+          )}
+        </AnimatePresence>
 
         {/* Shimmer effect when loading */}
         <AnimatePresence>
