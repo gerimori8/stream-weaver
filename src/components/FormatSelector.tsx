@@ -35,7 +35,7 @@ export const FormatSelector = ({ format, onChange }: FormatSelectorProps) => {
         >
           <Music className="w-4 h-4" />
           <span>MP3</span>
-          <span className="text-xs opacity-70">320kb</span>
+          <span className="text-xs opacity-70">HQ</span>
         </button>
 
         <button
@@ -44,7 +44,7 @@ export const FormatSelector = ({ format, onChange }: FormatSelectorProps) => {
         >
           <Video className="w-4 h-4" />
           <span>MP4</span>
-          <span className="text-xs opacity-70">1080p</span>
+          <span className="text-xs opacity-70">HD</span>
         </button>
       </div>
     </div>

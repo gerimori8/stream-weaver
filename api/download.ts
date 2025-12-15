@@ -62,37 +62,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let fileSize = '';
 
     if (format === 'mp3' && data.audios?.items?.length > 0) {
-      // Get highest quality audio - prioritize 320kbps
-      const sortedAudios = [...data.audios.items].sort((a: any, b: any) => {
-        const bitrateA = parseInt(a?.bitrate || '0');
-        const bitrateB = parseInt(b?.bitrate || '0');
-        return bitrateB - bitrateA;
-      });
+      // Get best audio up to 320kbps
+      const sortedAudios = [...data.audios.items]
+        .filter((a: any) => parseInt(a?.bitrate || '0') <= 320)
+        .sort((a: any, b: any) => {
+          const bitrateA = parseInt(a?.bitrate || '0');
+          const bitrateB = parseInt(b?.bitrate || '0');
+          return bitrateB - bitrateA;
+        });
       
-      const audio = sortedAudios[0];
+      const audio = sortedAudios[0] || data.audios.items[0];
       downloadUrl = audio.url;
-      quality = `${audio.bitrate || '320'}kbps`;
-      fileSize = audio.size || 'Unknown';
+      quality = `${audio.bitrate || '128'}kbps`;
+      fileSize = audio.size || '';
     } else if (format === 'mp4' && data.videos?.items?.length > 0) {
-      // Prioritize 1080p with audio, then 720p, then best available
+      // Get best video up to 1080p with audio
       const videosWithAudio = data.videos.items.filter((v: any) => v.hasAudio !== false);
+      const videoPool = videosWithAudio.length > 0 ? videosWithAudio : data.videos.items;
       
-      // Sort by height descending to get best quality first
-      const sortedVideos = [...(videosWithAudio.length > 0 ? videosWithAudio : data.videos.items)]
+      // Filter videos up to 1080p and sort by quality descending
+      const sortedVideos = [...videoPool]
+        .filter((v: any) => parseInt(v?.height || '0') <= 1080)
         .sort((a: any, b: any) => {
           const heightA = parseInt(a?.height || '0');
           const heightB = parseInt(b?.height || '0');
           return heightB - heightA;
         });
       
-      // Find 1080p first, then 720p, otherwise take the best available
-      const video = sortedVideos.find((v: any) => parseInt(v?.height) === 1080) 
-        || sortedVideos.find((v: any) => parseInt(v?.height) === 720)
-        || sortedVideos[0];
-
+      const video = sortedVideos[0] || videoPool[0];
       downloadUrl = video.url;
       quality = video.quality || `${video.height}p`;
-      fileSize = video.size || 'Unknown';
+      fileSize = video.size || '';
     }
 
     if (!downloadUrl) {
