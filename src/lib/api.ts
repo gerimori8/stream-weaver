@@ -54,10 +54,19 @@ export const downloadVideo = async (
       body: JSON.stringify({ videoId, format }),
     });
 
+    // Check if response is JSON
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      return { 
+        success: false, 
+        error: 'API no disponible. Despliega en Vercel para descargar.' 
+      };
+    }
+
     const data = await response.json();
 
     if (!response.ok) {
-      return { success: false, error: data.error || 'Failed to process video' };
+      return { success: false, error: data.error || 'Error al procesar el video' };
     }
 
     return data;
