@@ -25,13 +25,11 @@ const Index = () => {
               transition={{ delay: 0.2 }}
               className="text-sm uppercase tracking-[0.2em] text-muted-foreground mb-4"
             >
-              Descargador Premium
+              YouTube → MP3 / MP4
             </motion.p>
             
             <h1 className="font-serif text-4xl md:text-6xl lg:text-7xl font-semibold text-foreground mb-6 leading-tight">
-              Descarga con
-              <br />
-              <span className="text-gradient-gold">Elegancia</span>
+              Tube<span className="text-gradient-gold">Grab</span>
             </h1>
             
             <motion.p
@@ -40,7 +38,7 @@ const Index = () => {
               transition={{ delay: 0.4 }}
               className="text-lg text-muted-foreground max-w-md mx-auto leading-relaxed"
             >
-              Convierte cualquier video de YouTube a MP3 o MP4 con la máxima calidad y sin complicaciones.
+              Descarga videos de YouTube en MP3 o MP4 con la mejor calidad disponible.
             </motion.p>
           </motion.div>
 
