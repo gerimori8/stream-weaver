@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Download, Link2, Loader2, Check, AlertCircle, Sparkles, ExternalLink } from "lucide-react";
 import { FormatSelector } from "./FormatSelector";
 import { VideoPreview } from "./VideoPreview";
+import { DownloadProgress } from "./DownloadProgress";
 import { toast } from "@/hooks/use-toast";
 import { downloadVideo, triggerDownload, extractVideoId, type DownloadResponse } from "@/lib/api";
 
@@ -11,6 +12,8 @@ export const DownloadCard = () => {
   const [format, setFormat] = useState<"mp3" | "mp4">("mp3");
   const [isLoading, setIsLoading] = useState(false);
   const [videoInfo, setVideoInfo] = useState<DownloadResponse | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState<"idle" | "downloading" | "complete">("idle");
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const isValidYouTubeUrl = (url: string) => {
     return extractVideoId(url) !== null;
@@ -39,6 +42,8 @@ export const DownloadCard = () => {
 
     setIsLoading(true);
     setVideoInfo(null);
+    setDownloadStatus("idle");
+    setDownloadProgress(0);
     
     const result = await downloadVideo(url, format);
     
@@ -63,13 +68,33 @@ export const DownloadCard = () => {
 
   const handleDownload = () => {
     if (videoInfo?.downloadUrl && videoInfo.title) {
+      setDownloadStatus("downloading");
+      setDownloadProgress(0);
+      
+      // Simulate progress (since we can't track actual download progress with direct links)
+      const progressInterval = setInterval(() => {
+        setDownloadProgress(prev => {
+          if (prev >= 90) {
+            return prev;
+          }
+          return prev + Math.random() * 15;
+        });
+      }, 200);
+
       const filename = `${videoInfo.title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
       triggerDownload(videoInfo.downloadUrl, filename);
       
-      toast({
-        title: "Descarga iniciada",
-        description: "El archivo se está descargando...",
-      });
+      // Complete after a short delay
+      setTimeout(() => {
+        clearInterval(progressInterval);
+        setDownloadProgress(100);
+        setDownloadStatus("complete");
+        
+        toast({
+          title: "¡Descarga iniciada!",
+          description: "El archivo se está descargando en tu navegador.",
+        });
+      }, 1500);
     }
   };
 
@@ -219,15 +244,40 @@ export const DownloadCard = () => {
                 fileSize={videoInfo.fileSize}
               />
               
-              <motion.button
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                onClick={handleDownload}
-                className="mt-4 w-full btn-secondary flex items-center justify-center gap-2"
-              >
-                <ExternalLink className="w-4 h-4" />
-                <span>Descargar Ahora</span>
-              </motion.button>
+              {/* Download Progress */}
+              {downloadStatus !== "idle" && (
+                <DownloadProgress 
+                  progress={Math.round(downloadProgress)} 
+                  status={downloadStatus} 
+                />
+              )}
+              
+              {downloadStatus === "idle" && (
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  onClick={handleDownload}
+                  className="mt-4 w-full btn-secondary flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Descargar Ahora</span>
+                </motion.button>
+              )}
+              
+              {downloadStatus === "complete" && (
+                <motion.button
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  onClick={() => {
+                    setDownloadStatus("idle");
+                    setDownloadProgress(0);
+                  }}
+                  className="mt-4 w-full btn-secondary flex items-center justify-center gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Descargar de nuevo</span>
+                </motion.button>
+              )}
             </>
           )}
         </AnimatePresence>
