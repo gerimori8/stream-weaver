@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Clock, User } from "lucide-react";
+import { Clock, User, Music, Video, Sparkles } from "lucide-react";
 import { formatDuration } from "@/lib/api";
 
 interface VideoPreviewProps {
@@ -9,6 +9,7 @@ interface VideoPreviewProps {
   channel: string;
   quality: string;
   format: string;
+  fileSize?: string;
 }
 
 export const VideoPreview = ({
@@ -18,7 +19,10 @@ export const VideoPreview = ({
   channel,
   quality,
   format,
+  fileSize,
 }: VideoPreviewProps) => {
+  const isAudio = format === 'mp3';
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -54,16 +58,39 @@ export const VideoPreview = ({
               {formatDuration(duration)}
             </span>
           </div>
-          <div className="mt-2 flex gap-2">
-            <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-medium uppercase">
-              {format}
-            </span>
-            <span className="px-2 py-0.5 rounded-full bg-secondary/20 text-secondary-foreground text-xs font-medium">
-              {quality}
-            </span>
-          </div>
         </div>
       </div>
+      
+      {/* Quality Badge - Highlighted */}
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ delay: 0.2 }}
+        className="mt-4 p-3 rounded-xl bg-primary/5 border border-primary/20 flex items-center justify-between"
+      >
+        <div className="flex items-center gap-2">
+          {isAudio ? (
+            <Music className="w-4 h-4 text-primary" />
+          ) : (
+            <Video className="w-4 h-4 text-primary" />
+          )}
+          <span className="text-sm font-medium text-foreground">
+            {format.toUpperCase()}
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <Sparkles className="w-3 h-3 text-primary" />
+          <span className="text-sm font-semibold text-primary">
+            {quality}
+          </span>
+          {fileSize && (
+            <span className="text-xs text-muted-foreground ml-2">
+              ({fileSize})
+            </span>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 };

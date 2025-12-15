@@ -216,6 +216,7 @@ export const DownloadCard = () => {
                 channel={videoInfo.channel || 'Unknown'}
                 quality={videoInfo.quality || ''}
                 format={videoInfo.format || format}
+                fileSize={videoInfo.fileSize}
               />
               
               <motion.button
