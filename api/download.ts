@@ -76,33 +76,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       quality = `${audio.bitrate || '128'}kbps`;
       fileSize = audio.size || '';
     } else if (format === 'mp4' && data.videos?.items?.length > 0) {
-      // Sort all videos by quality descending (up to 1080p)
-      const allVideos = [...data.videos.items]
-        .filter((v: any) => parseInt(v?.height || '0') <= 1080 && v.url)
+      // Get best quality video up to 1080p (ignore audio - YouTube separates them at high quality)
+      const sortedVideos = [...data.videos.items]
+        .filter((v: any) => v.url && parseInt(v?.height || '0') <= 1080)
         .sort((a: any, b: any) => {
           const heightA = parseInt(a?.height || '0');
           const heightB = parseInt(b?.height || '0');
           return heightB - heightA;
         });
       
-      // First try to find best quality with audio
-      const videosWithAudio = allVideos.filter((v: any) => v.hasAudio === true);
-      
-      // Use video with audio if available at good quality, otherwise use best quality
-      let video;
-      if (videosWithAudio.length > 0) {
-        // If best with-audio is close to best overall, use it
-        const bestWithAudio = videosWithAudio[0];
-        const bestOverall = allVideos[0];
-        const withAudioHeight = parseInt(bestWithAudio?.height || '0');
-        const overallHeight = parseInt(bestOverall?.height || '0');
-        
-        // Prefer with audio unless quality difference is > 360p
-        video = (overallHeight - withAudioHeight > 360) ? bestOverall : bestWithAudio;
-      } else {
-        video = allVideos[0];
-      }
-      
+      const video = sortedVideos[0];
       if (video) {
         downloadUrl = video.url;
         quality = video.quality || `${video.height}p`;
