@@ -76,23 +76,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       quality = `${audio.bitrate || '128'}kbps`;
       fileSize = audio.size || '';
     } else if (format === 'mp4' && data.videos?.items?.length > 0) {
-      // Get best video up to 1080p with audio
-      const videosWithAudio = data.videos.items.filter((v: any) => v.hasAudio !== false);
-      const videoPool = videosWithAudio.length > 0 ? videosWithAudio : data.videos.items;
-      
-      // Filter videos up to 1080p and sort by quality descending
-      const sortedVideos = [...videoPool]
-        .filter((v: any) => parseInt(v?.height || '0') <= 1080)
+      // Sort all videos by quality descending (up to 1080p)
+      const allVideos = [...data.videos.items]
+        .filter((v: any) => parseInt(v?.height || '0') <= 1080 && v.url)
         .sort((a: any, b: any) => {
           const heightA = parseInt(a?.height || '0');
           const heightB = parseInt(b?.height || '0');
           return heightB - heightA;
         });
       
-      const video = sortedVideos[0] || videoPool[0];
-      downloadUrl = video.url;
-      quality = video.quality || `${video.height}p`;
-      fileSize = video.size || '';
+      // First try to find best quality with audio
+      const videosWithAudio = allVideos.filter((v: any) => v.hasAudio === true);
+      
+      // Use video with audio if available at good quality, otherwise use best quality
+      let video;
+      if (videosWithAudio.length > 0) {
+        // If best with-audio is close to best overall, use it
+        const bestWithAudio = videosWithAudio[0];
+        const bestOverall = allVideos[0];
+        const withAudioHeight = parseInt(bestWithAudio?.height || '0');
+        const overallHeight = parseInt(bestOverall?.height || '0');
+        
+        // Prefer with audio unless quality difference is > 360p
+        video = (overallHeight - withAudioHeight > 360) ? bestOverall : bestWithAudio;
+      } else {
+        video = allVideos[0];
+      }
+      
+      if (video) {
+        downloadUrl = video.url;
+        quality = video.quality || `${video.height}p`;
+        fileSize = video.size || '';
+      }
     }
 
     if (!downloadUrl) {
