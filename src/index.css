@@ -220,7 +220,7 @@
     background: linear-gradient(
       90deg,
       transparent 0%,
-      hsl(var(--primary) / 0.1) 50%,
+      hsl(var(--primary) / 0.15) 50%,
       transparent 100%
     );
     background-size: 200% 100%;
@@ -248,6 +248,73 @@
   @keyframes pulseGlow {
     0%, 100% { box-shadow: 0 0 20px hsl(var(--primary) / 0.2); }
     50% { box-shadow: 0 0 40px hsl(var(--primary) / 0.4); }
+  }
+
+  .wiggle {
+    animation: wiggle 0.5s ease-in-out;
+  }
+
+  @keyframes wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    25% { transform: rotate(-5deg); }
+    75% { transform: rotate(5deg); }
+  }
+
+  .bounce-in {
+    animation: bounceIn 0.6s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  @keyframes bounceIn {
+    0% { transform: scale(0); opacity: 0; }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); opacity: 1; }
+  }
+
+  .glow-pulse {
+    animation: glowPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes glowPulse {
+    0%, 100% { 
+      box-shadow: 0 0 5px hsl(var(--primary) / 0.3),
+                  0 0 10px hsl(var(--primary) / 0.2),
+                  0 0 15px hsl(var(--primary) / 0.1);
+    }
+    50% { 
+      box-shadow: 0 0 10px hsl(var(--primary) / 0.5),
+                  0 0 20px hsl(var(--primary) / 0.3),
+                  0 0 30px hsl(var(--primary) / 0.2);
+    }
+  }
+
+  .slide-up-fade {
+    animation: slideUpFade 0.4s ease-out forwards;
+  }
+
+  @keyframes slideUpFade {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .rotate-in {
+    animation: rotateIn 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  @keyframes rotateIn {
+    from {
+      opacity: 0;
+      transform: rotate(-10deg) scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0) scale(1);
+    }
   }
 }
 
