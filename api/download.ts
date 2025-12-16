@@ -62,19 +62,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let fileSize = '';
 
     if (format === 'mp3' && data.audios?.items?.length > 0) {
-      // Get best audio up to 320kbps
+      // Get best audio available (no upper limit, sort by bitrate descending)
       const sortedAudios = [...data.audios.items]
-        .filter((a: any) => parseInt(a?.bitrate || '0') <= 320)
+        .filter((a: any) => a.url)
         .sort((a: any, b: any) => {
-          const bitrateA = parseInt(a?.bitrate || '0');
-          const bitrateB = parseInt(b?.bitrate || '0');
+          const bitrateA = parseInt(a?.bitrate || a?.audioBitrate || a?.abr || '0');
+          const bitrateB = parseInt(b?.bitrate || b?.audioBitrate || b?.abr || '0');
           return bitrateB - bitrateA;
         });
       
       const audio = sortedAudios[0] || data.audios.items[0];
-      downloadUrl = audio.url;
-      quality = `${audio.bitrate || '128'}kbps`;
-      fileSize = audio.size || '';
+      if (audio) {
+        downloadUrl = audio.url;
+        const bitrate = audio.bitrate || audio.audioBitrate || audio.abr || '128';
+        quality = `${bitrate}kbps`;
+        fileSize = audio.size || audio.contentLength || '';
+      }
+    }
     } else if (format === 'mp4' && data.videos?.items?.length > 0) {
       // Get best quality video up to 1080p (ignore audio - YouTube separates them at high quality)
       const sortedVideos = [...data.videos.items]
