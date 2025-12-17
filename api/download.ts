@@ -79,7 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fileSize = audio.size || audio.contentLength || '';
       }
     }
-    } else if (format === 'mp4' && data.videos?.items?.length > 0) {
+    else if (format === 'mp4' && data.videos?.items?.length > 0) {
       // Get best quality video up to 1080p (ignore audio - YouTube separates them at high quality)
       const sortedVideos = [...data.videos.items]
         .filter((v: any) => v.url && parseInt(v?.height || '0') <= 1080)
