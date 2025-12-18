@@ -1,3 +1,11 @@
+export interface QualityOption {
+  url: string;
+  quality: string;
+  fileSize?: string;
+  bitrate?: string;
+  hasAudio?: boolean;
+}
+
 export interface DownloadResponse {
   success: boolean;
   title?: string;
@@ -9,6 +17,7 @@ export interface DownloadResponse {
   fileSize?: string;
   format?: string;
   error?: string;
+  availableQualities?: QualityOption[];
 }
 
 export const extractVideoId = (url: string): string | null => {
@@ -37,7 +46,8 @@ export const formatDuration = (seconds: number): string => {
 
 export const downloadVideo = async (
   videoUrl: string,
-  format: 'mp3' | 'mp4'
+  format: 'mp3' | 'mp4',
+  selectedQuality?: string
 ): Promise<DownloadResponse> => {
   const videoId = extractVideoId(videoUrl);
 
@@ -51,7 +61,7 @@ export const downloadVideo = async (
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ videoId, format }),
+      body: JSON.stringify({ videoId, format, selectedQuality }),
     });
 
     // Check if response is JSON
