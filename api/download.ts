@@ -3,6 +3,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
 const RAPIDAPI_HOST = 'youtube-media-downloader.p.rapidapi.com';
 
+interface QualityOption {
+  url: string;
+  quality: string;
+  fileSize?: string;
+  bitrate?: string;
+  hasAudio?: boolean;
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -18,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { videoId, format } = req.body;
+    const { videoId, format, selectedQuality } = req.body;
 
     if (!videoId) {
       return res.status(400).json({ error: 'Video ID is required' });
@@ -55,49 +63,101 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const data = await response.json();
+    
+    // Extract all available qualities
+    const audioQualities: QualityOption[] = [];
+    const videoQualities: QualityOption[] = [];
 
-    // Extract relevant download links based on format
+    // Process audio options
+    if (data.audios?.items?.length > 0) {
+      for (const audio of data.audios.items) {
+        if (!audio.url) continue;
+        
+        const bitrate = audio.bitrate || audio.audioBitrate || audio.abr || '128';
+        const bitrateNum = parseInt(bitrate);
+        
+        // Avoid duplicates
+        if (!audioQualities.some(q => q.bitrate === `${bitrateNum}kbps`)) {
+          audioQualities.push({
+            url: audio.url,
+            quality: `${bitrateNum}kbps`,
+            bitrate: `${bitrateNum}kbps`,
+            fileSize: audio.size || audio.contentLength || '',
+          });
+        }
+      }
+      // Sort by bitrate descending
+      audioQualities.sort((a, b) => {
+        const bitrateA = parseInt(a.bitrate || '0');
+        const bitrateB = parseInt(b.bitrate || '0');
+        return bitrateB - bitrateA;
+      });
+    }
+
+    // Process video options
+    if (data.videos?.items?.length > 0) {
+      for (const video of data.videos.items) {
+        if (!video.url) continue;
+        
+        const height = parseInt(video.height || '0');
+        if (height > 1080) continue; // Skip 4K+
+        
+        const qualityLabel = video.quality || `${height}p`;
+        const hasAudio = video.hasAudio !== false && video.audioChannels !== 0;
+        
+        // Avoid duplicates
+        if (!videoQualities.some(q => q.quality === qualityLabel)) {
+          videoQualities.push({
+            url: video.url,
+            quality: qualityLabel,
+            fileSize: video.size || '',
+            hasAudio,
+          });
+        }
+      }
+      // Sort by resolution descending
+      videoQualities.sort((a, b) => {
+        const heightA = parseInt(a.quality) || 0;
+        const heightB = parseInt(b.quality) || 0;
+        return heightB - heightA;
+      });
+    }
+
+    // If user selected a specific quality, return that download URL
     let downloadUrl = '';
     let quality = '';
     let fileSize = '';
 
-    if (format === 'mp3' && data.audios?.items?.length > 0) {
-      // Get best audio available (no upper limit, sort by bitrate descending)
-      const sortedAudios = [...data.audios.items]
-        .filter((a: any) => a.url)
-        .sort((a: any, b: any) => {
-          const bitrateA = parseInt(a?.bitrate || a?.audioBitrate || a?.abr || '0');
-          const bitrateB = parseInt(b?.bitrate || b?.audioBitrate || b?.abr || '0');
-          return bitrateB - bitrateA;
-        });
-      
-      const audio = sortedAudios[0] || data.audios.items[0];
-      if (audio) {
-        downloadUrl = audio.url;
-        const bitrate = audio.bitrate || audio.audioBitrate || audio.abr || '128';
-        quality = `${bitrate}kbps`;
-        fileSize = audio.size || audio.contentLength || '';
+    if (selectedQuality) {
+      if (format === 'mp3') {
+        const selected = audioQualities.find(q => q.quality === selectedQuality);
+        if (selected) {
+          downloadUrl = selected.url;
+          quality = selected.quality;
+          fileSize = selected.fileSize || '';
+        }
+      } else if (format === 'mp4') {
+        const selected = videoQualities.find(q => q.quality === selectedQuality);
+        if (selected) {
+          downloadUrl = selected.url;
+          quality = selected.quality;
+          fileSize = selected.fileSize || '';
+        }
       }
-    }
-    else if (format === 'mp4' && data.videos?.items?.length > 0) {
-      // Get best quality video up to 1080p (ignore audio - YouTube separates them at high quality)
-      const sortedVideos = [...data.videos.items]
-        .filter((v: any) => v.url && parseInt(v?.height || '0') <= 1080)
-        .sort((a: any, b: any) => {
-          const heightA = parseInt(a?.height || '0');
-          const heightB = parseInt(b?.height || '0');
-          return heightB - heightA;
-        });
-      
-      const video = sortedVideos[0];
-      if (video) {
-        downloadUrl = video.url;
-        quality = video.quality || `${video.height}p`;
-        fileSize = video.size || '';
+    } else {
+      // Return best quality by default for initial preview
+      if (format === 'mp3' && audioQualities.length > 0) {
+        downloadUrl = audioQualities[0].url;
+        quality = audioQualities[0].quality;
+        fileSize = audioQualities[0].fileSize || '';
+      } else if (format === 'mp4' && videoQualities.length > 0) {
+        downloadUrl = videoQualities[0].url;
+        quality = videoQualities[0].quality;
+        fileSize = videoQualities[0].fileSize || '';
       }
     }
 
-    if (!downloadUrl) {
+    if (!downloadUrl && (format === 'mp3' ? audioQualities.length === 0 : videoQualities.length === 0)) {
       return res.status(404).json({ 
         error: 'No download URL found for the requested format' 
       });
@@ -113,6 +173,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       quality,
       fileSize,
       format,
+      // Include all available qualities
+      availableQualities: format === 'mp3' ? audioQualities : videoQualities,
     });
 
   } catch (error) {

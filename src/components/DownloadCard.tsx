@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Download, Link2, Loader2, Check, AlertCircle, Sparkles, ExternalLink } from "lucide-react";
+import { Download, Link2, Loader2, Check, AlertCircle, Sparkles } from "lucide-react";
 import { FormatSelector } from "./FormatSelector";
 import { VideoPreview } from "./VideoPreview";
 import { DownloadProgress } from "./DownloadProgress";
+import { QualitySelector, type QualityOption } from "./QualitySelector";
 import { toast } from "@/hooks/use-toast";
 import { downloadVideo, triggerDownload, extractVideoId, type DownloadResponse } from "@/lib/api";
 
@@ -14,6 +15,8 @@ export const DownloadCard = () => {
   const [videoInfo, setVideoInfo] = useState<DownloadResponse | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<"idle" | "downloading" | "complete">("idle");
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [selectedQuality, setSelectedQuality] = useState<string>("");
+  const [availableQualities, setAvailableQualities] = useState<QualityOption[]>([]);
 
   const isValidYouTubeUrl = (url: string) => {
     return extractVideoId(url) !== null;
@@ -44,6 +47,8 @@ export const DownloadCard = () => {
     setVideoInfo(null);
     setDownloadStatus("idle");
     setDownloadProgress(0);
+    setSelectedQuality("");
+    setAvailableQualities([]);
     
     const result = await downloadVideo(url, format);
     
@@ -60,10 +65,31 @@ export const DownloadCard = () => {
 
     setVideoInfo(result);
     
+    // Set available qualities and select the best one by default
+    if (result.availableQualities && result.availableQualities.length > 0) {
+      setAvailableQualities(result.availableQualities);
+      setSelectedQuality(result.availableQualities[0].quality);
+    }
+    
     toast({
       title: "¡Listo para descargar!",
       description: `${result.title?.slice(0, 40)}...`,
     });
+  };
+
+  const handleQualityChange = async (quality: string) => {
+    setSelectedQuality(quality);
+    
+    // Update download URL for the selected quality
+    const selected = availableQualities.find(q => q.quality === quality);
+    if (selected && videoInfo) {
+      setVideoInfo({
+        ...videoInfo,
+        downloadUrl: selected.url,
+        quality: selected.quality,
+        fileSize: selected.fileSize,
+      });
+    }
   };
 
   const handleDownload = () => {
@@ -71,7 +97,7 @@ export const DownloadCard = () => {
       setDownloadStatus("downloading");
       setDownloadProgress(0);
       
-      // Simulate progress (since we can't track actual download progress with direct links)
+      // Simulate progress
       const progressInterval = setInterval(() => {
         setDownloadProgress(prev => {
           if (prev >= 90) {
@@ -84,7 +110,6 @@ export const DownloadCard = () => {
       const filename = `${videoInfo.title.replace(/[^a-zA-Z0-9]/g, '_')}.${format}`;
       triggerDownload(videoInfo.downloadUrl, filename);
       
-      // Complete after a short delay
       setTimeout(() => {
         clearInterval(progressInterval);
         setDownloadProgress(100);
@@ -139,6 +164,8 @@ export const DownloadCard = () => {
                 onChange={(e) => {
                   setUrl(e.target.value);
                   setVideoInfo(null);
+                  setAvailableQualities([]);
+                  setSelectedQuality("");
                 }}
                 placeholder="https://youtube.com/watch?v=..."
                 className="input-elegant pr-12"
@@ -184,6 +211,8 @@ export const DownloadCard = () => {
               onChange={(f) => {
                 setFormat(f);
                 setVideoInfo(null);
+                setAvailableQualities([]);
+                setSelectedQuality("");
               }} 
             />
           </motion.div>
@@ -244,6 +273,27 @@ export const DownloadCard = () => {
                 fileSize={videoInfo.fileSize}
               />
               
+              {/* Quality Selector */}
+              {availableQualities.length > 0 && downloadStatus === "idle" && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mt-4 space-y-2"
+                >
+                  <label className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                    <Sparkles className="w-4 h-4" />
+                    Seleccionar calidad ({availableQualities.length} disponibles)
+                  </label>
+                  <QualitySelector
+                    qualities={availableQualities}
+                    selectedQuality={selectedQuality}
+                    onChange={handleQualityChange}
+                    format={format}
+                  />
+                </motion.div>
+              )}
+              
               {/* Download Progress */}
               {downloadStatus !== "idle" && (
                 <DownloadProgress 
@@ -260,7 +310,7 @@ export const DownloadCard = () => {
                   className="mt-4 w-full btn-secondary flex items-center justify-center gap-2"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Descargar Ahora</span>
+                  <span>Descargar {selectedQuality || videoInfo.quality}</span>
                 </motion.button>
               )}
               
