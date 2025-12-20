@@ -77,6 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Extract available qualities
     const audioQualities: QualityOption[] = [];
     const videoQualities: QualityOption[] = [];
+    const av1Qualities: QualityOption[] = [];
 
     // Process audio options
     if (contents.audios?.length > 0) {
@@ -120,56 +121,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     for (const video of renderableVideos) {
       const label = video.label || video.metadata?.quality_label || '';
       const qualityLabel = label.includes('p') ? label : `${label}p`;
+      const mimeType = video.metadata?.mime_type || '';
+      const isAV1 = mimeType.includes('av01') || mimeType.includes('av1');
       
-      if (!videoQualities.some(q => q.quality === qualityLabel)) {
-        videoQualities.push({
-          url: video.renderConfig?.executionUrl || '',
-          quality: qualityLabel,
-          fileSize: video.metadata?.content_length_text || '',
-          hasAudio: true, // Renderable videos always have audio merged
-        });
+      if (isAV1) {
+        // Add to AV1 qualities
+        if (!av1Qualities.some(q => q.quality === qualityLabel)) {
+          av1Qualities.push({
+            url: video.renderConfig?.executionUrl || '',
+            quality: qualityLabel,
+            fileSize: video.metadata?.content_length_text || '',
+            hasAudio: true,
+          });
+        }
+      } else {
+        // Add to regular MP4 qualities
+        if (!videoQualities.some(q => q.quality === qualityLabel)) {
+          videoQualities.push({
+            url: video.renderConfig?.executionUrl || '',
+            quality: qualityLabel,
+            fileSize: video.metadata?.content_length_text || '',
+            hasAudio: true,
+          });
+        }
       }
     }
 
-    // Add regular videos ONLY if they have audio (progressive formats with mp4a codec)
+    // Add regular videos - separate AV1 from H.264
     for (const video of regularVideos) {
       const label = video.label || video.metadata?.quality_label || '';
       const qualityLabel = label.includes('p') ? label : `${label}p`;
       const mimeType = video.metadata?.mime_type || '';
-      
-      // Only include if it has audio codec (mp4a) - this means it's a progressive format
       const hasAudio = mimeType.includes('mp4a');
+      const isAV1 = mimeType.includes('av01') || mimeType.includes('av1');
       
-      // Only add if not already added from renderable and HAS AUDIO
-      if (hasAudio && !videoQualities.some(q => q.quality === qualityLabel)) {
-        videoQualities.push({
-          url: video.url || '',
-          quality: qualityLabel,
-          fileSize: video.metadata?.content_length_text || '',
-          hasAudio: true,
-        });
+      if (isAV1) {
+        // Add to AV1 qualities if has audio or not already present
+        if (hasAudio && !av1Qualities.some(q => q.quality === qualityLabel)) {
+          av1Qualities.push({
+            url: video.url || '',
+            quality: qualityLabel,
+            fileSize: video.metadata?.content_length_text || '',
+            hasAudio: true,
+          });
+        }
+      } else {
+        // Only add if not already added from renderable and HAS AUDIO
+        if (hasAudio && !videoQualities.some(q => q.quality === qualityLabel)) {
+          videoQualities.push({
+            url: video.url || '',
+            quality: qualityLabel,
+            fileSize: video.metadata?.content_length_text || '',
+            hasAudio: true,
+          });
+        }
       }
     }
 
     // Sort videos by quality (highest first)
     const qualityOrder: Record<string, number> = {
+      '8640p': 8640, '4320p': 4320, '4320p60': 4320,
       '2160p': 2160, '2160p60': 2160, '1440p': 1440, '1440p60': 1440,
       '1080p': 1080, '1080p60': 1080, '720p': 720, '720p60': 720,
       '480p': 480, '360p': 360, '240p': 240, '144p': 144,
     };
     
-    videoQualities.sort((a, b) => {
-      const aOrder = qualityOrder[a.quality] || 0;
-      const bOrder = qualityOrder[b.quality] || 0;
-      return bOrder - aOrder;
-    });
+    const sortByQuality = (arr: QualityOption[]) => {
+      arr.sort((a, b) => {
+        const aOrder = qualityOrder[a.quality] || 0;
+        const bOrder = qualityOrder[b.quality] || 0;
+        return bOrder - aOrder;
+      });
+    };
+    
+    sortByQuality(videoQualities);
+    sortByQuality(av1Qualities);
 
     console.log('Final videoQualities:', videoQualities);
+    console.log('Final av1Qualities:', av1Qualities);
 
     // Get download URL based on selection
     let downloadUrl = '';
     let quality = '';
     let fileSize = '';
+
+    // Determine which qualities array to use based on format
+    const targetQualities = format === 'mp3' 
+      ? audioQualities 
+      : format === 'av1' 
+        ? av1Qualities 
+        : videoQualities;
 
     if (format === 'mp3') {
       const selected = selectedQuality 
@@ -182,19 +223,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fileSize = selected.fileSize || '';
       }
     } else {
-      // For MP4, find selected quality
+      // For MP4 and AV1, find selected quality
+      const qualitiesToSearch = format === 'av1' ? av1Qualities : videoQualities;
       const selected = selectedQuality
-        ? videoQualities.find(q => q.quality === selectedQuality)
-        : videoQualities[0];
+        ? qualitiesToSearch.find(q => q.quality === selectedQuality)
+        : qualitiesToSearch[0];
       
       if (selected) {
         console.log('Selected quality:', selected);
         
         // Find the corresponding renderable video first (has audio)
+        const isAV1Format = format === 'av1';
         const renderable = renderableVideos.find((v: any) => {
           const vLabel = v.label || v.metadata?.quality_label || '';
           const vQuality = vLabel.includes('p') ? vLabel : `${vLabel}p`;
-          return vQuality === selected.quality;
+          const mimeType = v.metadata?.mime_type || '';
+          const videoIsAV1 = mimeType.includes('av01') || mimeType.includes('av1');
+          return vQuality === selected.quality && (isAV1Format ? videoIsAV1 : !videoIsAV1);
         });
         
         if (renderable?.renderConfig?.executionUrl) {
@@ -222,7 +267,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             const vLabel = v.label || v.metadata?.quality_label || '';
             const vQuality = vLabel.includes('p') ? vLabel : `${vLabel}p`;
             const mimeType = v.metadata?.mime_type || '';
-            return vQuality === selected.quality && mimeType.includes('mp4a');
+            const videoIsAV1 = mimeType.includes('av01') || mimeType.includes('av1');
+            return vQuality === selected.quality && mimeType.includes('mp4a') && (isAV1Format ? videoIsAV1 : !videoIsAV1);
           });
           
           if (regularWithAudio?.url) {
@@ -264,8 +310,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       quality,
       fileSize,
       format,
-      availableQualities: format === 'mp3' ? audioQualities : videoQualities,
-      hasVideoOnlyWarning: videoQualities.some(v => !v.hasAudio),
+      availableQualities: format === 'mp3' ? audioQualities : format === 'av1' ? av1Qualities : videoQualities,
+      hasVideoOnlyWarning: (format === 'av1' ? av1Qualities : videoQualities).some(v => !v.hasAudio),
     });
 
   } catch (error) {

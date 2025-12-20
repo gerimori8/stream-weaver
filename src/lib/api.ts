@@ -46,7 +46,7 @@ export const formatDuration = (seconds: number): string => {
 
 export const downloadVideo = async (
   videoUrl: string,
-  format: 'mp3' | 'mp4',
+  format: 'mp3' | 'mp4' | 'av1',
   selectedQuality?: string
 ): Promise<DownloadResponse> => {
   const videoId = extractVideoId(videoUrl);

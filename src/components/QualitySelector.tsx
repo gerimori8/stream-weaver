@@ -14,7 +14,7 @@ interface QualitySelectorProps {
   qualities: QualityOption[];
   selectedQuality: string;
   onChange: (quality: string) => void;
-  format: "mp3" | "mp4";
+  format: "mp3" | "mp4" | "av1";
 }
 
 export const QualitySelector = ({
@@ -122,7 +122,7 @@ export const QualitySelector = ({
                       >
                         {quality.quality}
                       </p>
-                      {format === "mp4" && quality.hasAudio === false && (
+                      {(format === "mp4" || format === "av1") && quality.hasAudio === false && (
                         <p className="text-xs text-amber-500">Solo video (sin audio)</p>
                       )}
                     </div>
