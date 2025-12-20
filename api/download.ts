@@ -209,14 +209,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Parse duration from format "HH:MM:SS" or "MM:SS"
+    // Parse duration - can be string "HH:MM:SS" or number in seconds
     let duration = 0;
-    if (metadata.additionalData?.duration) {
-      const parts = metadata.additionalData.duration.split(':').map(Number);
-      if (parts.length === 3) {
-        duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
-      } else if (parts.length === 2) {
-        duration = parts[0] * 60 + parts[1];
+    const rawDuration = metadata.additionalData?.duration;
+    if (rawDuration) {
+      if (typeof rawDuration === 'number') {
+        duration = rawDuration;
+      } else if (typeof rawDuration === 'string') {
+        const parts = rawDuration.split(':').map(Number);
+        if (parts.length === 3) {
+          duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2) {
+          duration = parts[0] * 60 + parts[1];
+        }
       }
     }
 
