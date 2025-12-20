@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY || '';
-const RAPIDAPI_HOST = 'youtube-video-downloader-4k-and-8k-mp3.p.rapidapi.com';
+const RAPIDAPI_HOST = 'youtube-video-and-shorts-downloader1.p.rapidapi.com';
 
 interface QualityOption {
   url: string;
@@ -36,19 +36,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'API key not configured' });
     }
 
-    console.log(`Fetching video info for: ${videoId}, format: ${format}`);
+    console.log(`Fetching video info for: ${videoId}, format: ${format}, selectedQuality: ${selectedQuality}`);
 
-    // Use the new API that merges audio+video automatically
-    const url = new URL('https://youtube-video-downloader-4k-and-8k-mp3.p.rapidapi.com/download');
-    url.searchParams.append('id', videoId);
+    // Build URL with renderable formats for merged video+audio
+    const url = new URL('https://youtube-video-and-shorts-downloader1.p.rapidapi.com/youtube/v3/video/details');
+    url.searchParams.append('videoId', videoId);
     
-    // Request the specific format - this API returns merged audio+video for MP4
-    if (selectedQuality) {
-      url.searchParams.append('format', selectedQuality);
-    } else if (format === 'mp3') {
-      url.searchParams.append('format', 'mp3');
-    } else {
-      url.searchParams.append('format', '1080'); // Default to 1080p
+    // Request renderable formats (merged video+audio) for all qualities
+    if (format === 'mp4') {
+      url.searchParams.append('renderableFormats', 'all');
     }
 
     const response = await fetch(url.toString(), {
@@ -69,87 +65,173 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const data = await response.json();
-    console.log('API response:', JSON.stringify(data, null, 2));
+    console.log('API response metadata:', JSON.stringify(data.metadata, null, 2));
     
-    // Handle error response from API
-    if (data.error || data.status === 'error') {
-      return res.status(400).json({ 
-        error: data.message || data.error || 'Video not available' 
-      });
+    if (data.error) {
+      return res.status(400).json({ error: data.error });
     }
 
-    // Extract available qualities from the API response
+    const contents = data.contents?.[0] || {};
+    const metadata = data.metadata || {};
+
+    // Extract available qualities
     const audioQualities: QualityOption[] = [];
     const videoQualities: QualityOption[] = [];
 
-    // This API provides pre-merged video+audio streams
-    // Available formats: 8k, 4k, 1080, 720, 480, 360, mp3, m4a
-    const videoFormats = ['8k', '4k', '1080', '720', '480', '360'];
-    const audioFormats = ['mp3', 'm4a'];
+    // Process audio options
+    if (contents.audios?.length > 0) {
+      for (const audio of contents.audios) {
+        const label = audio.label || 'audio';
+        const bitrateMatch = audio.metadata?.audio_sample_rate;
+        let bitrate = '128kbps';
+        
+        if (audio.metadata?.mime_type?.includes('mp4a')) {
+          bitrate = label === 'high' ? '256kbps' : label === 'medium' ? '128kbps' : '64kbps';
+        }
+        
+        if (!audioQualities.some(q => q.quality === label)) {
+          audioQualities.push({
+            url: audio.url || '',
+            quality: label.charAt(0).toUpperCase() + label.slice(1),
+            bitrate,
+            fileSize: audio.metadata?.content_length_text || '',
+            hasAudio: true,
+          });
+        }
+      }
+    }
 
-    // Build quality options based on what the API supports
-    if (format === 'mp3') {
-      // Audio formats
-      for (const fmt of audioFormats) {
-        const bitrateLabel = fmt === 'mp3' ? '320kbps' : '256kbps';
-        audioQualities.push({
-          url: '', // URL will be fetched when user selects
-          quality: fmt.toUpperCase(),
-          bitrate: bitrateLabel,
-          hasAudio: true,
+    // Process video options - prefer renderableVideos (merged with audio)
+    const renderableVideos = contents.renderableVideos || [];
+    const regularVideos = contents.videos || [];
+
+    // First, add renderable videos (these have audio merged!)
+    for (const video of renderableVideos) {
+      const label = video.label || video.metadata?.quality_label || '';
+      const qualityLabel = label.includes('p') ? label : `${label}p`;
+      
+      if (!videoQualities.some(q => q.quality === qualityLabel)) {
+        videoQualities.push({
+          url: '', // Will use renderConfig
+          quality: qualityLabel,
+          fileSize: video.metadata?.content_length_text || '',
+          hasAudio: true, // Renderable videos always have audio merged
         });
+      }
+    }
+
+    // Add regular videos that already have audio (progressive formats)
+    for (const video of regularVideos) {
+      const label = video.label || video.metadata?.quality_label || '';
+      const qualityLabel = label.includes('p') ? label : `${label}p`;
+      const mimeType = video.metadata?.mime_type || '';
+      
+      // Check if video has audio codec in mime type
+      const hasAudio = mimeType.includes('mp4a') || mimeType.includes('audio');
+      
+      if (!videoQualities.some(q => q.quality === qualityLabel)) {
+        videoQualities.push({
+          url: video.url || '',
+          quality: qualityLabel,
+          fileSize: video.metadata?.content_length_text || '',
+          hasAudio,
+        });
+      }
+    }
+
+    // Sort videos by quality (highest first)
+    const qualityOrder: Record<string, number> = {
+      '2160p': 2160, '2160p60': 2160, '1440p': 1440, '1440p60': 1440,
+      '1080p': 1080, '1080p60': 1080, '720p': 720, '720p60': 720,
+      '480p': 480, '360p': 360, '240p': 240, '144p': 144,
+    };
+    
+    videoQualities.sort((a, b) => {
+      const aOrder = qualityOrder[a.quality] || 0;
+      const bOrder = qualityOrder[b.quality] || 0;
+      return bOrder - aOrder;
+    });
+
+    // Get download URL based on selection
+    let downloadUrl = '';
+    let quality = '';
+    let fileSize = '';
+
+    if (format === 'mp3') {
+      const selected = selectedQuality 
+        ? audioQualities.find(q => q.quality === selectedQuality)
+        : audioQualities[0];
+      
+      if (selected) {
+        downloadUrl = selected.url;
+        quality = selected.quality;
+        fileSize = selected.fileSize || '';
       }
     } else {
-      // Video formats - all include audio (merged by the API)
-      for (const fmt of videoFormats) {
-        let qualityLabel = fmt;
-        if (fmt === '8k') qualityLabel = '4320p';
-        else if (fmt === '4k') qualityLabel = '2160p';
-        else qualityLabel = `${fmt}p`;
+      // For MP4, prefer renderable (merged) video
+      const selected = selectedQuality
+        ? videoQualities.find(q => q.quality === selectedQuality)
+        : videoQualities.find(q => q.hasAudio) || videoQualities[0];
+      
+      if (selected) {
+        // Find the corresponding renderable or regular video
+        const renderable = renderableVideos.find((v: any) => 
+          v.label === selected.quality || v.metadata?.quality_label === selected.quality
+        );
+        const regular = regularVideos.find((v: any) => 
+          v.label === selected.quality || v.metadata?.quality_label === selected.quality
+        );
         
-        videoQualities.push({
-          url: '', // URL will be fetched when user selects
-          quality: qualityLabel,
-          hasAudio: true, // This API always includes audio!
-        });
+        if (renderable?.renderConfig?.executionUrl) {
+          // Trigger render and get download URL
+          try {
+            const renderResponse = await fetch(renderable.renderConfig.executionUrl, {
+              method: 'GET',
+            });
+            const renderData = await renderResponse.json();
+            console.log('Render response:', JSON.stringify(renderData, null, 2));
+            
+            if (renderData.downloadUrl || renderData.url) {
+              downloadUrl = renderData.downloadUrl || renderData.url;
+            }
+          } catch (renderError) {
+            console.error('Render error:', renderError);
+          }
+        }
+        
+        // Fallback to regular URL if render failed
+        if (!downloadUrl && regular?.url) {
+          downloadUrl = regular.url;
+        }
+        
+        quality = selected.quality;
+        fileSize = selected.fileSize || '';
       }
     }
 
-    // Get the actual download URL from the response
-    let downloadUrl = data.url || data.link || data.downloadUrl || '';
-    let quality = selectedQuality || (format === 'mp3' ? 'MP3' : '1080p');
-    let fileSize = data.size || data.fileSize || '';
-
-    // If no download URL in response, it might be in a different structure
-    if (!downloadUrl && data.formats) {
-      const targetFormat = selectedQuality || (format === 'mp3' ? 'mp3' : '1080');
-      const formatData = data.formats.find((f: any) => 
-        f.quality === targetFormat || f.format === targetFormat || f.label?.includes(targetFormat)
-      );
-      if (formatData) {
-        downloadUrl = formatData.url || formatData.link;
-        fileSize = formatData.size || '';
+    // Parse duration from format "HH:MM:SS" or "MM:SS"
+    let duration = 0;
+    if (metadata.additionalData?.duration) {
+      const parts = metadata.additionalData.duration.split(':').map(Number);
+      if (parts.length === 3) {
+        duration = parts[0] * 3600 + parts[1] * 60 + parts[2];
+      } else if (parts.length === 2) {
+        duration = parts[0] * 60 + parts[1];
       }
     }
-
-    // Get video metadata (need a separate call for thumbnail/title)
-    let title = data.title || 'Video';
-    let thumbnail = data.thumbnail || data.thumbnailUrl || '';
-    let duration = data.duration || data.lengthSeconds || 0;
-    let channel = data.channel || data.author || '';
 
     return res.status(200).json({
       success: true,
-      title,
-      thumbnail,
+      title: metadata.title || 'Video',
+      thumbnail: metadata.thumbnailUrl || '',
       duration,
-      channel,
+      channel: metadata.author?.name || '',
       downloadUrl,
       quality,
       fileSize,
       format,
       availableQualities: format === 'mp3' ? audioQualities : videoQualities,
-      hasVideoOnlyWarning: false, // This API always includes audio
+      hasVideoOnlyWarning: videoQualities.some(v => !v.hasAudio),
     });
 
   } catch (error) {
