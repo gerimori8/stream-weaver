@@ -94,19 +94,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Process video options
+    // Process video options - include all resolutions including 4K
     if (data.videos?.items?.length > 0) {
       for (const video of data.videos.items) {
         if (!video.url) continue;
         
         const height = parseInt(video.height || '0');
-        if (height > 1080) continue; // Skip 4K+
-        
         const qualityLabel = video.quality || `${height}p`;
         const hasAudio = video.hasAudio !== false && video.audioChannels !== 0;
         
-        // Avoid duplicates
-        if (!videoQualities.some(q => q.quality === qualityLabel)) {
+        // Avoid duplicates - prefer versions WITH audio
+        const existingIndex = videoQualities.findIndex(q => q.quality === qualityLabel);
+        if (existingIndex >= 0) {
+          // If current one has audio and existing doesn't, replace it
+          if (hasAudio && !videoQualities[existingIndex].hasAudio) {
+            videoQualities[existingIndex] = {
+              url: video.url,
+              quality: qualityLabel,
+              fileSize: video.size || '',
+              hasAudio,
+            };
+          }
+        } else {
           videoQualities.push({
             url: video.url,
             quality: qualityLabel,
@@ -122,6 +131,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return heightB - heightA;
       });
     }
+    
+    // For MP4, filter to only show options WITH audio (video+audio combined)
+    const videoWithAudio = videoQualities.filter(v => v.hasAudio);
+    const finalVideoQualities = videoWithAudio.length > 0 ? videoWithAudio : videoQualities;
 
     // If user selected a specific quality, return that download URL
     let downloadUrl = '';
@@ -137,7 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           fileSize = selected.fileSize || '';
         }
       } else if (format === 'mp4') {
-        const selected = videoQualities.find(q => q.quality === selectedQuality);
+        const selected = finalVideoQualities.find(q => q.quality === selectedQuality);
         if (selected) {
           downloadUrl = selected.url;
           quality = selected.quality;
@@ -150,14 +163,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         downloadUrl = audioQualities[0].url;
         quality = audioQualities[0].quality;
         fileSize = audioQualities[0].fileSize || '';
-      } else if (format === 'mp4' && videoQualities.length > 0) {
-        downloadUrl = videoQualities[0].url;
-        quality = videoQualities[0].quality;
-        fileSize = videoQualities[0].fileSize || '';
+      } else if (format === 'mp4' && finalVideoQualities.length > 0) {
+        downloadUrl = finalVideoQualities[0].url;
+        quality = finalVideoQualities[0].quality;
+        fileSize = finalVideoQualities[0].fileSize || '';
       }
     }
 
-    if (!downloadUrl && (format === 'mp3' ? audioQualities.length === 0 : videoQualities.length === 0)) {
+    if (!downloadUrl && (format === 'mp3' ? audioQualities.length === 0 : finalVideoQualities.length === 0)) {
       return res.status(404).json({ 
         error: 'No download URL found for the requested format' 
       });
@@ -173,8 +186,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       quality,
       fileSize,
       format,
-      // Include all available qualities
-      availableQualities: format === 'mp3' ? audioQualities : videoQualities,
+      // Include all available qualities (for MP4, only those with audio)
+      availableQualities: format === 'mp3' ? audioQualities : finalVideoQualities,
+      // Flag if we had to filter out video-only options
+      hasVideoOnlyWarning: format === 'mp4' && videoWithAudio.length < videoQualities.length,
     });
 
   } catch (error) {
