@@ -55,7 +55,7 @@ const Index = () => {
             transition={{ delay: 1.2 }}
             className="mt-16 text-sm text-muted-foreground/60"
           >
-            Diseñado con pasión • Sin límites de descargas
+            Diseñado con pasión • Sin límites de descargas • Made by Gerard
           </motion.p>
         </div>
       </main>
