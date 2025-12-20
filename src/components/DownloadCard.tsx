@@ -10,7 +10,7 @@ import { downloadVideo, triggerDownload, extractVideoId, type DownloadResponse }
 
 export const DownloadCard = () => {
   const [url, setUrl] = useState("");
-  const [format, setFormat] = useState<"mp3" | "mp4">("mp3");
+  const [format, setFormat] = useState<"mp3" | "mp4" | "av1">("mp3");
   const [isLoading, setIsLoading] = useState(false);
   const [videoInfo, setVideoInfo] = useState<DownloadResponse | null>(null);
   const [downloadStatus, setDownloadStatus] = useState<"idle" | "downloading" | "complete">("idle");
