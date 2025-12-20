@@ -105,6 +105,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const renderableVideos = contents.renderableVideos || [];
     const regularVideos = contents.videos || [];
 
+    console.log('Available renderableVideos:', renderableVideos.map((v: any) => ({
+      label: v.label,
+      quality: v.metadata?.quality_label,
+      hasRenderConfig: !!v.renderConfig?.executionUrl
+    })));
+    console.log('Available regularVideos:', regularVideos.map((v: any) => ({
+      label: v.label,
+      quality: v.metadata?.quality_label,
+      mime: v.metadata?.mime_type
+    })));
+
     // First, add renderable videos (these have audio merged!)
     for (const video of renderableVideos) {
       const label = video.label || video.metadata?.quality_label || '';
@@ -112,7 +123,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       if (!videoQualities.some(q => q.quality === qualityLabel)) {
         videoQualities.push({
-          url: '', // Will use renderConfig
+          url: video.renderConfig?.executionUrl || '',
           quality: qualityLabel,
           fileSize: video.metadata?.content_length_text || '',
           hasAudio: true, // Renderable videos always have audio merged
@@ -120,21 +131,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Add regular videos that already have audio (progressive formats)
+    // Add regular videos ONLY if they have audio (progressive formats with mp4a codec)
     for (const video of regularVideos) {
       const label = video.label || video.metadata?.quality_label || '';
       const qualityLabel = label.includes('p') ? label : `${label}p`;
       const mimeType = video.metadata?.mime_type || '';
       
-      // Check if video has audio codec in mime type
-      const hasAudio = mimeType.includes('mp4a') || mimeType.includes('audio');
+      // Only include if it has audio codec (mp4a) - this means it's a progressive format
+      const hasAudio = mimeType.includes('mp4a');
       
-      if (!videoQualities.some(q => q.quality === qualityLabel)) {
+      // Only add if not already added from renderable and HAS AUDIO
+      if (hasAudio && !videoQualities.some(q => q.quality === qualityLabel)) {
         videoQualities.push({
           url: video.url || '',
           quality: qualityLabel,
           fileSize: video.metadata?.content_length_text || '',
-          hasAudio,
+          hasAudio: true,
         });
       }
     }
@@ -152,6 +164,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return bOrder - aOrder;
     });
 
+    console.log('Final videoQualities:', videoQualities);
+
     // Get download URL based on selection
     let downloadUrl = '';
     let quality = '';
@@ -168,22 +182,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         fileSize = selected.fileSize || '';
       }
     } else {
-      // For MP4, prefer renderable (merged) video
+      // For MP4, find selected quality
       const selected = selectedQuality
         ? videoQualities.find(q => q.quality === selectedQuality)
-        : videoQualities.find(q => q.hasAudio) || videoQualities[0];
+        : videoQualities[0];
       
       if (selected) {
-        // Find the corresponding renderable or regular video
-        const renderable = renderableVideos.find((v: any) => 
-          v.label === selected.quality || v.metadata?.quality_label === selected.quality
-        );
-        const regular = regularVideos.find((v: any) => 
-          v.label === selected.quality || v.metadata?.quality_label === selected.quality
-        );
+        console.log('Selected quality:', selected);
+        
+        // Find the corresponding renderable video first (has audio)
+        const renderable = renderableVideos.find((v: any) => {
+          const vLabel = v.label || v.metadata?.quality_label || '';
+          const vQuality = vLabel.includes('p') ? vLabel : `${vLabel}p`;
+          return vQuality === selected.quality;
+        });
         
         if (renderable?.renderConfig?.executionUrl) {
           // Trigger render and get download URL
+          console.log('Calling render URL:', renderable.renderConfig.executionUrl);
           try {
             const renderResponse = await fetch(renderable.renderConfig.executionUrl, {
               method: 'GET',
@@ -193,15 +209,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             
             if (renderData.downloadUrl || renderData.url) {
               downloadUrl = renderData.downloadUrl || renderData.url;
+              console.log('Got merged download URL:', downloadUrl);
             }
           } catch (renderError) {
             console.error('Render error:', renderError);
           }
         }
         
-        // Fallback to regular URL if render failed
-        if (!downloadUrl && regular?.url) {
-          downloadUrl = regular.url;
+        // Fallback: Only use regular video if it has audio (progressive format)
+        if (!downloadUrl) {
+          const regularWithAudio = regularVideos.find((v: any) => {
+            const vLabel = v.label || v.metadata?.quality_label || '';
+            const vQuality = vLabel.includes('p') ? vLabel : `${vLabel}p`;
+            const mimeType = v.metadata?.mime_type || '';
+            return vQuality === selected.quality && mimeType.includes('mp4a');
+          });
+          
+          if (regularWithAudio?.url) {
+            downloadUrl = regularWithAudio.url;
+            console.log('Using progressive format with audio:', downloadUrl);
+          } else {
+            console.log('No video with audio available for quality:', selected.quality);
+          }
         }
         
         quality = selected.quality;
